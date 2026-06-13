@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>R&D 과제 선정 에이전트 데모</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --purple-dark:  #5b21b6;
+    --purple:       #7c3aed;
+    --purple-light: #ede9fe;
+    --purple-pale:  #f5f3ff;
+    --academic-bg:  #c4b5fd;
+    --industry-bg:  #93c5fd;
+    --mgmt-bg:      #6ee7b7;
+    --academic-dim: #ede9fe;
+    --industry-dim: #dbeafe;
+    --mgmt-dim:     #d1fae5;
+    --coord-bg:     #ddd6fe;
+    --mod-bg:       #e0e7ff;
+    --green:  #16a34a; --lime: #65a30d; --amber: #d97706;
+    --orange: #ea580c; --red:  #dc2626;
+    --gray-50:  #f9fafb; --gray-100: #f3f4f6; --gray-200: #e5e7eb;
+    --gray-400: #9ca3af; --gray-600: #4b5563; --gray-700: #374151;
+    --gray-800: #1f2937;
+  }
+
+  body { font-family: 'Noto Sans KR', sans-serif; background: var(--gray-50); color: var(--gray-800); min-height: 100vh; }
+
+  header {
+    background: linear-gradient(135deg, var(--purple-dark) 0%, var(--purple) 100%);
+    color: white; padding: 1.25rem 2rem;
+    display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;
+    box-shadow: 0 2px 8px rgba(91,33,182,.35);
+  }
+  header h1 { font-size: 1.2rem; font-weight: 700; white-space: nowrap; }
+  header .subtitle { font-size: .8rem; opacity: .8; }
+
+  .controls { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-left: auto; }
+  select {
+    padding: .5rem .9rem; border-radius: 8px; border: none;
+    font-family: inherit; font-size: .9rem;
+    background: rgba(255,255,255,.15); color: white;
+    min-width: 260px; max-width: 420px; cursor: pointer;
+  }
+  select option { background: #3730a3; color: white; }
+  button#runBtn {
+    padding: .5rem 1.4rem; border-radius: 8px; border: 2px solid white;
+    background: white; color: var(--purple-dark);
+    font-family: inherit; font-size: .9rem; font-weight: 600;
+    cursor: pointer; transition: all .2s; white-space: nowrap;
+  }
+  button#runBtn:hover:not(:disabled) { background: var(--purple-light); }
+  button#runBtn:disabled { opacity: .5; cursor: not-allowed; }
+
+  main { max-width: 1300px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+
+  .section-label {
+    display: flex; align-items: center; gap: .6rem;
+    font-size: .75rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--gray-400); margin: 1.6rem 0 .7rem;
+  }
+  .section-label::before, .section-label::after {
+    content: ''; flex: 1; height: 1px; background: var(--gray-200);
+  }
+
+  /* ── Card grid ── */
+  .card-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  .card-row.single { grid-template-columns: 1fr; }
+
+  .card {
+    background: white; border-radius: 14px; border: 2px solid var(--gray-200);
+    overflow: hidden; transition: border-color .3s, box-shadow .3s; opacity: .4;
+  }
+  .card.active  { opacity: 1; border-color: var(--purple-light); box-shadow: 0 2px 12px rgba(124,58,237,.12); }
+  .card.running { opacity: 1; border-color: var(--purple); box-shadow: 0 0 0 3px rgba(124,58,237,.2); }
+  .card.done    { opacity: 1; }
+
+  .card-header {
+    padding: .7rem 1rem; display: flex; align-items: center; gap: .6rem;
+    font-weight: 700; font-size: .92rem;
+  }
+  .card-header .panel-type { font-size: .72rem; font-weight: 400; color: var(--gray-600); margin-left: auto; text-align: right; }
+  .card-header .status-icon { font-size: 1rem; flex-shrink: 0; }
+
+  .hdr-s1    { background: var(--academic-bg); }
+  .hdr-s2    { background: var(--industry-bg); }
+  .hdr-s3    { background: var(--mgmt-bg); }
+  .hdr-coord { background: var(--coord-bg); }
+  .hdr-mod   { background: var(--mod-bg); }
+
+  .card-body { padding: .6rem .9rem .9rem; font-size: .84rem; line-height: 1.6; }
+
+  /* ── Dimension section inside card ── */
+  .dim-section {
+    border-top: 1px solid var(--gray-100); padding: .55rem 0 .45rem;
+  }
+  .dim-section:first-child { border-top: none; padding-top: .25rem; }
+  .dim-title {
+    font-size: .72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--gray-400); margin-bottom: .3rem;
+  }
+  .dim-s1 .dim-title { color: #5b21b6; }
+  .dim-s2 .dim-title { color: #1d4ed8; }
+  .dim-s3 .dim-title { color: #065f46; }
+
+  /* ── Grade badge ── */
+  .grade {
+    display: inline-block; padding: .12rem .55rem; border-radius: 99px;
+    font-size: .72rem; font-weight: 700; color: white; margin-bottom: .35rem;
+  }
+  .g-매우우수 { background: var(--green); }
+  .g-우수     { background: var(--lime); }
+  .g-보통     { background: var(--amber); }
+  .g-미흡     { background: var(--orange); }
+  .g-매우미흡 { background: var(--red); }
+
+  /* ── Evidence table ── */
+  .evidence-wrap { margin: .35rem 0 .2rem; }
+  .evidence-label { font-size: .7rem; font-weight: 700; color: var(--gray-400); margin-bottom: .15rem; }
+  .evidence-table { border-collapse: collapse; width: 100%; }
+  .evidence-table td { font-size: .74rem; padding: .05rem 0; vertical-align: top; }
+  .evidence-table td:first-child { color: var(--gray-400); padding-right: .5rem; white-space: nowrap; }
+
+  /* ── Bullet lists ── */
+  ul.bullets { padding-left: 1.1rem; margin-top: .2rem; }
+  ul.bullets li { margin-bottom: .15rem; font-size: .8rem; }
+  ul.str li::marker { color: var(--green); }
+  ul.wkn li::marker { color: var(--red); }
+
+  .text-block { color: var(--gray-700); white-space: pre-wrap; word-break: break-word; }
+
+  /* ── Verdict ── */
+  .decision-badge {
+    display: inline-block; padding: .25rem 1rem; border-radius: 99px;
+    font-weight: 700; font-size: 1rem; color: white; margin-bottom: .65rem;
+  }
+  .d-선정       { background: var(--green); }
+  .d-조건부선정 { background: var(--amber); }
+  .d-비선정     { background: var(--red); }
+  .d-판정보류   { background: #6b7280; }
+
+  .rank-badge {
+    display: inline-block; width: 1.8rem; height: 1.8rem;
+    line-height: 1.8rem; text-align: center; border-radius: 6px;
+    font-weight: 700; font-size: .95rem; color: white;
+  }
+  .r-A { background: var(--green); }
+  .r-B { background: var(--lime); }
+  .r-C { background: var(--amber); }
+  .r-D { background: var(--red); }
+
+  .conf-wrap { background: var(--gray-100); border-radius: 99px; height: 8px; overflow: hidden; flex: 1; }
+  .conf-fill { height: 100%; background: linear-gradient(90deg, var(--purple) 0%, #a855f7 100%); border-radius: 99px; transition: width .6s ease; }
+
+  /* ── Status bar ── */
+  #statusBar {
+    background: var(--purple-pale); border: 1px solid var(--purple-light);
+    border-radius: 10px; padding: .6rem 1rem; font-size: .85rem;
+    color: var(--purple-dark); margin-top: .5rem; min-height: 2.4rem;
+    display: flex; align-items: center; gap: .5rem;
+  }
+  #statusBar:empty { visibility: hidden; }
+
+  #welcome { text-align: center; padding: 3rem 1rem; color: var(--gray-400); }
+  #welcome p { font-size: 1rem; }
+
+  /* ── Spinner ── */
+  .spin {
+    display: inline-block; width: .85rem; height: .85rem;
+    border: 2px solid rgba(124,58,237,.2); border-top-color: var(--purple);
+    border-radius: 50%; animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 750px) { .card-row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>R&D 과제 선정 에이전트</h1>
+    <div class="subtitle">3-Phase Multi-Agent Pipeline · 단계별 전문가 패널 구성</div>
+  </div>
+  <div class="controls">
+    <select id="projectSelect"><option value="">— 데이터 로딩 중 —</option></select>
+    <button id="runBtn" disabled>▶ 실행</button>
+  </div>
+</header>
+
+<main>
+  <div id="statusBar"></div>
+  <div id="pipeline">
+    <div id="welcome">
+      <p style="font-size:2.5rem;margin-bottom:.75rem">⚖️</p>
+      <p>과제를 선택하고 <strong>▶ 실행</strong>을 클릭하면<br>
+         연구개발단계에 맞는 전문가 3인의 평가가 실시간으로 표시됩니다.</p>
+    </div>
+  </div>
+</main>
+
+<script>
+const AGENT_SLOTS = ["위원1", "위원2", "위원3"];
+function slotCls(slot) {
+  const m = {"위원1": "s1", "위원2": "s2", "위원3": "s3"};
+  return m[slot] || "s1";
+}
+const EVAL_ITEMS  = ["창의성", "수행계획 충실성", "연구개발 역량"];
+
+/* ── Load projects ── */
+async function loadProjects() {
+  const sel = document.getElementById('projectSelect');
+  try {
+    const data = await fetch('/projects').then(r => r.json());
+    sel.innerHTML = data.map(p =>
+      `<option value="${p.idx}">[${p.idx+1}] ${escHtml(p.title)}</option>`
+    ).join('');
+    document.getElementById('runBtn').disabled = false;
+  } catch {
+    sel.innerHTML = '<option>⚠ 로드 실패 — 서버 확인</option>';
+  }
+}
+
+/* ── Run ── */
+let running = false;
+document.getElementById('runBtn').addEventListener('click', async () => {
+  if (running) return;
+  const idx = document.getElementById('projectSelect').value;
+  if (idx === '') return;
+  running = true;
+  document.getElementById('runBtn').disabled = true;
+  initPipelineUI();
+
+  const { run_id } = await fetch(`/run/${idx}`, { method: 'POST' }).then(r => r.json());
+  setStatus('<span class="spin"></span> 파이프라인 실행 중…');
+
+  const es = new EventSource(`/stream/${run_id}`);
+  es.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    handleEvent(msg.event, msg.data || {});
+    if (msg.event === 'done' || msg.event === 'error') {
+      es.close(); running = false;
+      document.getElementById('runBtn').disabled = false;
+    }
+  };
+  es.onerror = () => {
+    setStatus('⚠ 스트림 연결 오류');
+    es.close(); running = false;
+    document.getElementById('runBtn').disabled = false;
+  };
+});
+
+/* ── Event dispatcher ── */
+function handleEvent(event, data) {
+  switch (event) {
+    case 'phase1_start':
+      setCardRunning(`p1-${data.slot}`);
+      setStatus(`<span class="spin"></span> Phase 1 평가 중: ${escHtml(data.slot)}`);
+      break;
+    case 'phase1_done':
+      fillPhase1Card(data.slot, data.result);
+      break;
+    case 'coordinator_start':
+      setCardRunning('coordinator');
+      setStatus('<span class="spin"></span> Coordinator: 항목별 쟁점 식별 중…');
+      break;
+    case 'coordinator_done':
+      fillCoordinatorCard(data.issues);
+      break;
+    case 'phase2_start':
+      setCardRunning(`p2-${data.slot}`);
+      setStatus(`<span class="spin"></span> Phase 2 반론 중: ${escHtml(data.slot)}`);
+      break;
+    case 'phase2_done':
+      fillPhase2Card(data.slot, data.result);
+      break;
+    case 'moderator_start':
+      setCardRunning('moderator');
+      setStatus('<span class="spin"></span> Moderator: 최종 판정 중…');
+      break;
+    case 'moderator_done':
+      fillModeratorCard(data.verdict);
+      break;
+    case 'done':
+      setStatus('✅ 파이프라인 완료');
+      break;
+    case 'error':
+      setStatus(`⚠ 오류: ${escHtml(data.message || '')}`);
+      break;
+  }
+}
+
+/* ── Helpers ── */
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function setStatus(html) { document.getElementById('statusBar').innerHTML = html; }
+function setCardRunning(id) {
+  const c = document.getElementById('card-' + id);
+  if (!c) return;
+  c.classList.remove('active'); c.classList.add('running');
+  c.querySelector('.status-icon').innerHTML = '<span class="spin"></span>';
+}
+function setCardDone(id) {
+  const c = document.getElementById('card-' + id);
+  if (!c) return;
+  c.classList.remove('running'); c.classList.add('done');
+  c.querySelector('.status-icon').textContent = '✓';
+}
+function gradeCls(g) {
+  const m = {'매우 우수':'매우우수','우수':'우수','보통':'보통','미흡':'미흡','매우 미흡':'매우미흡'};
+  return 'g-' + (m[g] || '');
+}
+
+/* ── Phase 1: multi-dimension card ── */
+function fillPhase1Card(slot, result) {
+  const id  = `p1-${slot}`;
+  const body = document.getElementById(`body-${id}`);
+  if (!body) return;
+
+  // Update card header to show actual job title
+  const titleEl = document.getElementById(`hdr-title-${id}`);
+  if (titleEl && result.panel_type) titleEl.textContent = result.panel_type;
+
+  const cls = slotCls(slot);
+  const html = EVAL_ITEMS.map(item => {
+    const ev = result[item] || {};
+    const grade = ev.grade || '—';
+    const evidence = ev.evidence && typeof ev.evidence === 'object'
+      ? Object.entries(ev.evidence).map(([k,v]) =>
+          `<tr><td>${escHtml(k)}</td><td>${escHtml(String(v))}</td></tr>`
+        ).join('') : '';
+    const str = (ev.strengths || []).map(s => `<li>${escHtml(s)}</li>`).join('');
+    const wkn = (ev.weaknesses || []).map(w => `<li>${escHtml(w)}</li>`).join('');
+
+    return `
+      <div class="dim-section dim-${cls}">
+        <div class="dim-title">${escHtml(item)}</div>
+        <span class="grade ${gradeCls(grade)}">${escHtml(grade)}</span>
+        <p class="text-block" style="font-size:.8rem">${escHtml(ev.reasoning || '')}</p>
+        ${evidence ? `<div class="evidence-wrap"><div class="evidence-label">근거 데이터</div><table class="evidence-table">${evidence}</table></div>` : ''}
+        ${str ? `<ul class="bullets str">${str}</ul>` : ''}
+        ${wkn ? `<ul class="bullets wkn">${wkn}</ul>` : ''}
+      </div>`;
+  }).join('');
+
+  body.innerHTML = html;
+  setCardDone(id);
+}
+
+/* ── Coordinator ── */
+function fillCoordinatorCard(issues) {
+  const body = document.getElementById('body-coordinator');
+  if (!body) return;
+  body.innerHTML = `<p class="text-block">${escHtml(issues || '')}</p>`;
+  setCardDone('coordinator');
+  AGENT_SLOTS.forEach(slot => {
+    const c = document.getElementById(`card-p2-${slot}`);
+    if (c) c.classList.add('active');
+  });
+}
+
+/* ── Phase 2 ── */
+function fillPhase2Card(slot, result) {
+  const id  = `p2-${slot}`;
+  const body = document.getElementById(`body-${id}`);
+  if (!body) return;
+  // Update Phase 2 header with job title too
+  const titleEl = document.getElementById(`hdr-title-${id}`);
+  if (titleEl && result.panel_type) titleEl.textContent = result.panel_type;
+  body.innerHTML = `<p class="text-block">${escHtml(result.response || '')}</p>`;
+  setCardDone(id);
+}
+
+/* ── Moderator ── */
+function fillModeratorCard(v) {
+  const body = document.getElementById('body-moderator');
+  if (!body) return;
+  if (!v || typeof v !== 'object') {
+    body.innerHTML = `<p class="text-block">${escHtml(JSON.stringify(v))}</p>`;
+    setCardDone('moderator'); return;
+  }
+  const decision = v.decision || '—';
+  const rank = v.priority_rank || '—';
+  const conf = Math.round((parseFloat(v.confidence) || 0) * 100);
+  const conditions = (v.conditions || []).filter(Boolean);
+  const grades = [
+    ['창의성',    v.creativity_grade],
+    ['수행계획',  v.execution_grade],
+    ['연구역량',  v.capability_grade],
+  ];
+  const gradeHtml = grades.map(([lbl, g]) =>
+    `<span style="margin-right:.5rem"><span style="font-size:.75rem;color:var(--gray-400)">${lbl}</span>&nbsp;<span class="grade ${gradeCls(g)}" style="font-size:.68rem">${escHtml(g||'—')}</span></span>`
+  ).join('');
+  const dCls = 'd-' + decision.replace(/\s/g, '');
+
+  body.innerHTML = `
+    <span class="decision-badge ${dCls}">${escHtml(decision)}</span>
+    <span class="rank-badge r-${escHtml(rank)}" style="vertical-align:middle;margin-left:.5rem">${escHtml(rank)}</span>
+    <div style="margin:.5rem 0">${gradeHtml}</div>
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem">
+      <span style="font-size:.75rem;color:var(--gray-400);white-space:nowrap">신뢰도 ${conf}%</span>
+      <div class="conf-wrap"><div class="conf-fill" style="width:${conf}%"></div></div>
+      <span style="font-size:.75rem;color:var(--gray-400)">${escHtml(v.consensus_level||'')}</span>
+    </div>
+    ${v.key_debate_points ? `<p class="text-block" style="margin-bottom:.5rem">${escHtml(v.key_debate_points)}</p>` : ''}
+    ${conditions.length ? `<div style="font-size:.8rem;color:var(--orange)"><strong>조건:</strong>${conditions.map(c=>`<br>• ${escHtml(c)}`).join('')}</div>` : ''}
+    ${v.deferral_reason ? `<div style="font-size:.8rem;color:#6b7280;margin-top:.35rem"><strong>보류 사유:</strong> ${escHtml(v.deferral_reason)}</div>` : ''}
+  `;
+  setCardDone('moderator');
+}
+
+/* ── Build skeleton UI ── */
+function initPipelineUI() {
+  const slotCard = (prefix, active) => AGENT_SLOTS.map((slot, i) => {
+    const id  = `${prefix}-${slot}`;
+    const cls = slotCls(slot);
+    return `
+      <div class="card${active?' active':''}" id="card-${id}">
+        <div class="card-header hdr-${cls}">
+          <span class="status-icon">○</span>
+          <span id="hdr-title-${id}">평가위원 ${i+1}</span>
+          <span class="panel-type" style="font-size:.72rem;font-weight:400;color:var(--gray-600);margin-left:auto">${escHtml(slot)}</span>
+        </div>
+        <div class="card-body" id="body-${id}">
+          <span style="color:var(--gray-400);font-size:.82rem">대기 중…</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  document.getElementById('pipeline').innerHTML = `
+    <div class="section-label">Phase 1 — 위원별 독립 평가 (전 항목)</div>
+    <div class="card-row">${slotCard('p1', true)}</div>
+
+    <div class="section-label">Coordinator — 항목별 쟁점 정리 & 재질문</div>
+    <div class="card-row single">
+      <div class="card" id="card-coordinator">
+        <div class="card-header hdr-coord">
+          <span class="status-icon">○</span> Coordinator
+        </div>
+        <div class="card-body" id="body-coordinator">
+          <span style="color:var(--gray-400);font-size:.82rem">Phase 1 완료 후 시작됩니다.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-label">Phase 2 — 위원별 반론 & 보완 의견</div>
+    <div class="card-row">${slotCard('p2', false)}</div>
+
+    <div class="section-label">Moderator — 최종 판정</div>
+    <div class="card-row single">
+      <div class="card" id="card-moderator">
+        <div class="card-header hdr-mod">
+          <span class="status-icon">○</span> Moderator
+        </div>
+        <div class="card-body" id="body-moderator">
+          <span style="color:var(--gray-400);font-size:.82rem">Phase 2 완료 후 시작됩니다.</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+loadProjects();
+</script>
+</body>
+</html>
