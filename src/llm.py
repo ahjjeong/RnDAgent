@@ -1,26 +1,47 @@
-"""Lightweight local LLM wrapper around HF transformers."""
+"""LLM wrapper supporting vLLM OpenAI-compatible API and HF transformers."""
 from __future__ import annotations
 import json
 import re
 import threading
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from .config import LLM_MODEL, MAX_NEW_TOKENS, TEMPERATURE
+from urllib import error, request
+
+from .config import (
+    LLM_BACKEND,
+    LLM_MODEL,
+    MAX_NEW_TOKENS,
+    TEMPERATURE,
+    VLLM_API_KEY,
+    VLLM_BASE_URL,
+    VLLM_TIMEOUT_SECONDS,
+)
 
 
 class LocalLLM:
     _instance = None
 
     def __init__(self, model_name: str = LLM_MODEL):
+        self.model_name = model_name
+        self.backend = LLM_BACKEND.lower().strip()
+        self._lock = threading.Lock()
+        if self.backend == "transformers":
+            self._init_transformers(model_name)
+        elif self.backend != "vllm":
+            raise ValueError(f"Unsupported LLM_BACKEND={LLM_BACKEND!r}")
+
+    def _init_transformers(self, model_name: str):
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+        dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else (
+            torch.float16 if torch.cuda.is_available() else torch.float32
+        )
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=dtype,
             device_map="auto" if torch.cuda.is_available() else None,
         )
         self.model.eval()
-        self._lock = threading.Lock()
 
     @classmethod
     def get(cls) -> "LocalLLM":
@@ -28,14 +49,51 @@ class LocalLLM:
             cls._instance = cls()
         return cls._instance
 
-    @torch.inference_mode()
     def chat(self, system: str, user: str, max_new_tokens: int = MAX_NEW_TOKENS) -> str:
+        if self.backend == "vllm":
+            return self._chat_vllm(system, user, max_new_tokens)
+        return self._chat_transformers(system, user, max_new_tokens)
+
+    def _chat_vllm(self, system: str, user: str, max_new_tokens: int) -> str:
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "max_tokens": max_new_tokens,
+            "temperature": TEMPERATURE,
+            "top_p": 0.9,
+        }
+        body = json.dumps(payload).encode("utf-8")
+        req = request.Request(
+            f"{VLLM_BASE_URL.rstrip('/')}/chat/completions",
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {VLLM_API_KEY}",
+            },
+            method="POST",
+        )
+        try:
+            with self._lock, request.urlopen(req, timeout=VLLM_TIMEOUT_SECONDS) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except error.URLError as exc:
+            raise RuntimeError(
+                f"vLLM 서버 호출 실패: {VLLM_BASE_URL}. "
+                "먼저 GPU 1번에서 vLLM 서버를 띄웠는지 확인하세요."
+            ) from exc
+        return data["choices"][0]["message"]["content"].strip()
+
+    def _chat_transformers(self, system: str, user: str, max_new_tokens: int) -> str:
+        import torch
+
         msgs = [{"role": "system", "content": system},
                 {"role": "user", "content": user}]
         prompt = self.tokenizer.apply_chat_template(
             msgs, tokenize=False, add_generation_prompt=True
         )
-        with self._lock:
+        with self._lock, torch.inference_mode():
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
             out = self.model.generate(
                 **inputs,

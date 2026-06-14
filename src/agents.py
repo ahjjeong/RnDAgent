@@ -1,14 +1,15 @@
-"""단계별 직종 기반 3인 평가단 + FacilitatorAgent(Coordinator·Moderator 겸임).
+"""생명과학 기초연구 전용 3인 평가단 + FacilitatorAgent.
 
-각 에이전트는 연구개발단계별로 배정된 전문 직종(panel_type) 관점에서
+각 에이전트는 생명과학 기초연구 패널의 고유 관점에서
 창의성·수행계획 충실성·연구개발 역량 전 항목을 평가합니다.
 """
 from __future__ import annotations
 from .llm import LocalLLM, extract_json
 from .prompt_config import (
     AgentConfig, AGENT_MAP,
-    CONTEXT_COLS, ITEM_COLS, EVAL_ITEMS, STAGE_NORMALIZE,
+    CONTEXT_COLS, ITEM_COLS, EVAL_ITEMS, STAGE_NORMALIZE, TARGET_RESEARCH_STAGE,
 )
+from .config import ID_COL, WEB_RAG_ENABLED
 from .continuation_lookup import ContinuationLookup
 from .web_rag import search_for_creativity
 
@@ -42,11 +43,25 @@ def _fmt(fields: dict) -> str:
 
 def _normalize_stage(raw: str | None) -> str:
     if not raw:
-        return "응용연구"
+        return TARGET_RESEARCH_STAGE
     for k, v in STAGE_NORMALIZE.items():
         if k in str(raw):
             return v
-    return "응용연구"
+    return TARGET_RESEARCH_STAGE
+
+
+def _project_year(row: dict) -> int | None:
+    for col in ("과제수행연도", "제출년도", "종료연도"):
+        value = row.get(col)
+        if value is None:
+            continue
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            text = str(value).strip()
+            if len(text) >= 4 and text[:4].isdigit():
+                return int(text[:4])
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -123,7 +138,7 @@ class EvaluatorAgent:
             web_result = project["_rag_web"]
             if web_result:
                 web_block = "\n" + web_result
-        else:
+        elif WEB_RAG_ENABLED:
             keywords = " ".join(filter(None, [
                 str(_pick(row, ITEM_COLS["창의성"]).get("요약문_한글키워드", "")),
                 str(_pick(row, ITEM_COLS["창의성"]).get("요약문_연구목표", ""))[:100],
@@ -142,10 +157,17 @@ class EvaluatorAgent:
                 str(v) for item in EVAL_ITEMS
                 for v in _pick(row, ITEM_COLS[item]).values()
             )
-            refs = self.retriever.search(self.slot, all_data_str, k=3)
+            refs = self.retriever.search(
+                self.slot,
+                all_data_str,
+                k=3,
+                exclude_idx=row.get("__dataset_row_id"),
+                max_year=_project_year(row),
+                exclude_project_id=row.get(ID_COL),
+            )
             if refs:
                 print(f"[RAG] 내부검색 {self.slot} — {len(refs)}건 주입됨")
-                ref_block = "\n[유사 과거 과제 참고]\n" + "\n".join(f"* {r[:300]}" for r in refs)
+                ref_block = "\n[유사 과거·동년 과제 참고]\n" + "\n".join(f"* {r[:300]}" for r in refs)
 
         # ── 항목별 데이터 블록 ──
         creativity_data  = _fmt(_pick(row, ITEM_COLS["창의성"]))
@@ -163,7 +185,7 @@ class EvaluatorAgent:
 
         # ── User ──
         user = f"""## 과제 맥락
-- 연구개발단계: {context.get("연구개발단계(변경)", "(미상)")}
+- 연구개발단계: {stage}
 - 신규/계속 구분: {"계속과제" if is_cont else "신규과제"}
 - 기술분야:
   · {context.get("과학기술표준분류1-대","")} > {context.get("과학기술표준분류1-중","")} > {context.get("과학기술표준분류1-소","")} (가중치 {context.get("과학기술표준분류가중치1","")}%)
@@ -214,7 +236,7 @@ class EvaluatorAgent:
     def evaluate(self, project: dict) -> dict:
         row: dict = project.get("_raw_row", {})
         stage = _normalize_stage(row.get("연구개발단계(변경)"))
-        cfg = AGENT_MAP.get((stage, self.slot)) or AGENT_MAP[("응용연구", self.slot)]
+        cfg = AGENT_MAP.get((stage, self.slot)) or AGENT_MAP[(TARGET_RESEARCH_STAGE, self.slot)]
 
         system, user = self._build_prompt(project, cfg, row)
         raw = self.llm.chat(system, user, max_new_tokens=768)
@@ -227,25 +249,21 @@ class EvaluatorAgent:
 
 # ─────────────────────────────────────────────────────────────────
 class FacilitatorAgent:
-    """위원장 — Coordinator(쟁점 식별·질문) + Moderator(최종 판정) 겸임."""
+    """위원장 — Coordinator(쟁점 식별·질문) + Moderator(최종 성과예측) 겸임."""
 
     PERSONA = (
-        "당신은 국가 R&D 과제 선정 위원회의 위원장입니다. "
-        "공정성과 균형을 최우선으로 하며, 세 위원의 의견을 조율하고 최종 판정을 내립니다."
+        "당신은 생명과학 기초연구 과제의 사후 성과를 예측하는 평가위원장입니다. "
+        "세 위원의 의견을 종합하여, 향후 5년 논문 성과가 유사 비교집단 내에서 "
+        "얼마나 우수할지 예측합니다."
     )
 
     VERDICT_SCHEMA = (
         '{\n'
-        '  "creativity_grade":  "매우 우수|우수|보통|미흡|매우 미흡",\n'
-        '  "execution_grade":   "매우 우수|우수|보통|미흡|매우 미흡",\n'
-        '  "capability_grade":  "매우 우수|우수|보통|미흡|매우 미흡",\n'
-        '  "decision":          "선정|조건부 선정|비선정|판정 보류",\n'
-        '  "deferral_reason":   "판정 보류 사유 (해당 없으면 null)",\n'
-        '  "conditions":        ["조건 (없으면 빈 배열)"],\n'
-        '  "priority_rank":     "A|B|C|D",\n'
-        '  "key_debate_points": "핵심 쟁점 2~3문장",\n'
-        '  "consensus_level":   "full|partial|none",\n'
-        '  "confidence":        0.0\n'
+        '  "performance_score": 0.0,\n'
+        '  "expected_performance_level": "high|middle|low",\n'
+        '  "predicted_high_performance_top20": true,\n'
+        '  "confidence": 0.0,\n'
+        '  "key_reasons": "2~3문장"\n'
         '}'
     )
 
@@ -298,10 +316,15 @@ class FacilitatorAgent:
         )
         system = (
             f"{self.PERSONA}\n"
-            "Round 2 토론까지 완료되었습니다. "
-            "신뢰도(confidence)가 0.5 미만이거나 핵심 정보가 불충분하면 "
-            "decision을 '판정 보류'로 설정하고 deferral_reason에 사유를 기재하십시오. "
-            "그 외에는 아래 JSON 스키마로만 최종 판정하세요."
+            "Round 2 토론까지 완료되었습니다. 최종 출력은 선정 여부가 아니라 사후 성과 예측입니다.\n"
+            "예측 대상은 종료연도 × 과학기술표준분류1-중 × 연구비 규모군 비교집단 내 "
+            "weighted_paper_count_5y 기준 논문 성과입니다.\n"
+            "performance_score는 비교집단 내 예상 성과 percentile에 대응하는 0~1 점수입니다. "
+            "predicted_high_performance_top20은 performance_score >= 0.80일 때만 true로 두십시오. "
+            "expected_performance_level은 high(0.80 이상), middle(0.40 이상 0.80 미만), "
+            "low(0.40 미만) 기준으로 일관되게 지정하십시오. "
+            "근거가 부족하면 performance_score와 confidence를 보수적으로 낮추십시오. "
+            "아래 JSON 스키마로만 응답하세요."
         )
         user = (
             f"[과제명] {project.get('title')}\n\n"
@@ -325,7 +348,7 @@ class DebateAgent:
     def respond(self, project: dict, issues: str, peer_evals: list[dict]) -> dict:
         row: dict = project.get("_raw_row", {})
         stage = _normalize_stage(row.get("연구개발단계(변경)"))
-        cfg = AGENT_MAP.get((stage, self.slot)) or AGENT_MAP[("응용연구", self.slot)]
+        cfg = AGENT_MAP.get((stage, self.slot)) or AGENT_MAP[(TARGET_RESEARCH_STAGE, self.slot)]
 
         # 동료 평가 요약 (항목별)
         peer_lines = []

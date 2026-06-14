@@ -35,9 +35,14 @@ def show(r: dict, idx: int, phase_filter: int | None, raw: bool):
     print(f"       id = {r.get('project_id','?')}")
     v = r.get("validation", {})
     if v:
-        mark = "✓" if v.get("aligned") else "✗"
-        print(f"       decision={v.get('decision')}  rank={v.get('priority_rank')}  "
-              f"outcome={v.get('outcome_grade')}  aligned={mark}")
+        pred = v.get("prediction", {})
+        main = v.get("main", {})
+        mark = "✓" if main.get("aligned_top20") else "✗"
+        print(
+            f"       score={pred.get('performance_score')}  "
+            f"pred_top20={pred.get('predicted_high_performance_top20')}  "
+            f"actual_top20={main.get('actual_high_performance_top20')}  aligned={mark}"
+        )
     print(SEP)
 
     if phase_filter in (None, 1):
@@ -60,7 +65,7 @@ def show(r: dict, idx: int, phase_filter: int | None, raw: bool):
             print()
 
     if phase_filter in (None, 3):
-        print("▣ Phase 3 — Moderator 최종 판정")
+        print("▣ Phase 3 — Moderator 최종 성과 예측")
         print(SUB)
         verdict = r.get("verdict", {})
         for k, val in verdict.items():
@@ -77,20 +82,23 @@ def summarize(results: list[dict]):
     print(SEP)
     print(f"Summary  (총 {len(results)} 건)")
     print(SEP)
-    print(f"{'idx':<4} {'decision':<12} {'rank':<6} {'outcome':<8} {'align':<6} title")
+    print(f"{'idx':<4} {'score':<7} {'pred20':<7} {'true20':<7} {'pct':<7} {'align':<6} title")
     for i, r in enumerate(results):
         v = r.get("validation", {})
+        pred = v.get("prediction", {})
+        main = v.get("main", {})
         print(f"{i:<4} "
-              f"{str(v.get('decision','?'))[:11]:<12} "
-              f"{str(v.get('priority_rank','?'))[:5]:<6} "
-              f"{str(v.get('outcome_grade','?'))[:7]:<8} "
-              f"{'✓' if v.get('aligned') else '✗':<6} "
+              f"{str(pred.get('performance_score','?'))[:6]:<7} "
+              f"{str(pred.get('predicted_high_performance_top20','?'))[:6]:<7} "
+              f"{str(main.get('actual_high_performance_top20','?'))[:6]:<7} "
+              f"{str(main.get('actual_performance_percentile','?'))[:6]:<7} "
+              f"{'✓' if main.get('aligned_top20') else '✗':<6} "
               f"{str(r.get('title',''))[:60]}")
     n = len(results)
     if n:
-        aligned = sum(1 for r in results if r.get("validation", {}).get("aligned"))
+        aligned = sum(1 for r in results if r.get("validation", {}).get("main", {}).get("aligned_top20"))
         print(SUB)
-        print(f"alignment rate: {aligned}/{n} = {aligned/n:.1%}")
+        print(f"direct top20 alignment rate: {aligned}/{n} = {aligned/n:.1%}")
 
 
 def main():

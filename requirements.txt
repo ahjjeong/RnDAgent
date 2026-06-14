@@ -14,3 +14,4 @@ langchain-core>=0.3.0
 python-dotenv
 fastapi
 uvicorn[standard]
+vllm==0.7.3

@@ -1,14 +1,30 @@
 """Configuration: model, dataset, per-agent column mapping."""
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATASET_DIR = ROOT / "dataset"
 SHEET_NAME = "사업과제정보"
 
-# Lightweight open LLM with good Korean + instruction-following.
-# Qwen2.5-3B-Instruct (~3B params, fits on a single modest GPU / CPU fallback).
-LLM_MODEL = "Qwen/Qwen2.5-3B-Instruct"
+# Persona stage is fixed to basic research. The CSV is already field-curated.
+TARGET_RESEARCH_STAGE = "기초연구"
+
+# A100 80GB full-dataset run: serve this model with vLLM on physical GPU 1.
+LLM_MODEL = os.getenv("LLM_MODEL", "Qwen/Qwen2.5-14B-Instruct")
+LLM_BACKEND = os.getenv("LLM_BACKEND", "vllm")  # "vllm" | "transformers"
+VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://127.0.0.1:8000/v1")
+VLLM_API_KEY = os.getenv("VLLM_API_KEY", "EMPTY")
+VLLM_TIMEOUT_SECONDS = int(os.getenv("VLLM_TIMEOUT_SECONDS", "300"))
 EMBED_MODEL = "BAAI/bge-m3"  # multilingual, Korean-capable, used for RAG
+RAG_DEVICE = os.getenv("RAG_DEVICE", "cpu")
+RAG_BATCH_SIZE = int(os.getenv("RAG_BATCH_SIZE", "32"))
+RAG_CANDIDATE_POOL = int(os.getenv("RAG_CANDIDATE_POOL", "200"))
+RAG_CACHE_ENABLED = os.getenv("RAG_CACHE_ENABLED", "1").lower() in {"1", "true", "yes", "y"}
+RAG_CACHE_DIR = Path(os.getenv("RAG_CACHE_DIR", ROOT / ".cache" / "rag"))
+RAG_SHOW_PROGRESS = os.getenv("RAG_SHOW_PROGRESS", "1").lower() in {"1", "true", "yes", "y"}
+WEB_RAG_ENABLED = os.getenv("WEB_RAG_ENABLED", "0").lower() in {"1", "true", "yes", "y"}
+WEB_RAG_ON_DEMAND = os.getenv("WEB_RAG_ON_DEMAND", "1").lower() in {"1", "true", "yes", "y"}
+WEB_RAG_GATE_MAX_TOKENS = int(os.getenv("WEB_RAG_GATE_MAX_TOKENS", "160"))
 
 MAX_NEW_TOKENS = 512
 TEMPERATURE = 0.3

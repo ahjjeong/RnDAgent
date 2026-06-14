@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>R&D 과제 선정 에이전트 데모</title>
+<title>R&D 성과예측 에이전트 데모</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -134,7 +134,7 @@
 
   .text-block { color: var(--gray-700); white-space: pre-wrap; word-break: break-word; }
 
-  /* ── Verdict ── */
+  /* ── Performance prediction ── */
   .decision-badge {
     display: inline-block; padding: .25rem 1rem; border-radius: 99px;
     font-weight: 700; font-size: 1rem; color: white; margin-bottom: .65rem;
@@ -184,8 +184,8 @@
 
 <header>
   <div>
-    <h1>R&D 과제 선정 에이전트</h1>
-    <div class="subtitle">3-Phase Multi-Agent Pipeline · 단계별 전문가 패널 구성</div>
+    <h1>R&D 성과예측 에이전트</h1>
+    <div class="subtitle">3-Phase Multi-Agent Pipeline · 생명과학 기초연구 전용 패널</div>
   </div>
   <div class="controls">
     <select id="projectSelect"><option value="">— 데이터 로딩 중 —</option></select>
@@ -199,7 +199,7 @@
     <div id="welcome">
       <p style="font-size:2.5rem;margin-bottom:.75rem">⚖️</p>
       <p>과제를 선택하고 <strong>▶ 실행</strong>을 클릭하면<br>
-         연구개발단계에 맞는 전문가 3인의 평가가 실시간으로 표시됩니다.</p>
+         생명과학 기초연구 전문가 3인의 평가가 실시간으로 표시됩니다.</p>
     </div>
   </div>
 </main>
@@ -281,7 +281,7 @@ function handleEvent(event, data) {
       break;
     case 'moderator_start':
       setCardRunning('moderator');
-      setStatus('<span class="spin"></span> Moderator: 최종 판정 중…');
+      setStatus('<span class="spin"></span> Moderator: 최종 성과 예측 중…');
       break;
     case 'moderator_done':
       fillModeratorCard(data.verdict);
@@ -385,32 +385,26 @@ function fillModeratorCard(v) {
     body.innerHTML = `<p class="text-block">${escHtml(JSON.stringify(v))}</p>`;
     setCardDone('moderator'); return;
   }
-  const decision = v.decision || '—';
-  const rank = v.priority_rank || '—';
+  const score = Math.round((parseFloat(v.performance_score) || 0) * 100);
+  const top20 = !!v.predicted_high_performance_top20;
+  const level = v.expected_performance_level || '—';
   const conf = Math.round((parseFloat(v.confidence) || 0) * 100);
-  const conditions = (v.conditions || []).filter(Boolean);
-  const grades = [
-    ['창의성',    v.creativity_grade],
-    ['수행계획',  v.execution_grade],
-    ['연구역량',  v.capability_grade],
-  ];
-  const gradeHtml = grades.map(([lbl, g]) =>
-    `<span style="margin-right:.5rem"><span style="font-size:.75rem;color:var(--gray-400)">${lbl}</span>&nbsp;<span class="grade ${gradeCls(g)}" style="font-size:.68rem">${escHtml(g||'—')}</span></span>`
-  ).join('');
-  const dCls = 'd-' + decision.replace(/\s/g, '');
+  const levelCls = level === 'high' ? 'd-선정' : (level === 'middle' ? 'd-조건부선정' : 'd-비선정');
 
   body.innerHTML = `
-    <span class="decision-badge ${dCls}">${escHtml(decision)}</span>
-    <span class="rank-badge r-${escHtml(rank)}" style="vertical-align:middle;margin-left:.5rem">${escHtml(rank)}</span>
-    <div style="margin:.5rem 0">${gradeHtml}</div>
+    <span class="decision-badge ${levelCls}">${escHtml(level)}</span>
+    <span class="grade ${top20 ? 'g-매우우수' : 'g-보통'}" style="vertical-align:middle;margin-left:.5rem">
+      Top20 ${top20 ? '예측' : '아님'}
+    </span>
+    <div style="display:flex;align-items:center;gap:.5rem;margin:.55rem 0">
+      <span style="font-size:.75rem;color:var(--gray-400);white-space:nowrap">성과점수 ${score}%</span>
+      <div class="conf-wrap"><div class="conf-fill" style="width:${score}%"></div></div>
+    </div>
     <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem">
       <span style="font-size:.75rem;color:var(--gray-400);white-space:nowrap">신뢰도 ${conf}%</span>
       <div class="conf-wrap"><div class="conf-fill" style="width:${conf}%"></div></div>
-      <span style="font-size:.75rem;color:var(--gray-400)">${escHtml(v.consensus_level||'')}</span>
     </div>
-    ${v.key_debate_points ? `<p class="text-block" style="margin-bottom:.5rem">${escHtml(v.key_debate_points)}</p>` : ''}
-    ${conditions.length ? `<div style="font-size:.8rem;color:var(--orange)"><strong>조건:</strong>${conditions.map(c=>`<br>• ${escHtml(c)}`).join('')}</div>` : ''}
-    ${v.deferral_reason ? `<div style="font-size:.8rem;color:#6b7280;margin-top:.35rem"><strong>보류 사유:</strong> ${escHtml(v.deferral_reason)}</div>` : ''}
+    ${v.key_reasons ? `<p class="text-block" style="margin-bottom:.5rem">${escHtml(v.key_reasons)}</p>` : ''}
   `;
   setCardDone('moderator');
 }
@@ -452,7 +446,7 @@ function initPipelineUI() {
     <div class="section-label">Phase 2 — 위원별 반론 & 보완 의견</div>
     <div class="card-row">${slotCard('p2', false)}</div>
 
-    <div class="section-label">Moderator — 최종 판정</div>
+    <div class="section-label">Moderator — 최종 성과 예측</div>
     <div class="card-row single">
       <div class="card" id="card-moderator">
         <div class="card-header hdr-mod">

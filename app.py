@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from src.data_loader import load_all, project_views
 
-app = FastAPI(title="R&D 선정 에이전트 데모")
+app = FastAPI(title="R&D 성과예측 에이전트 데모")
 
 _projects: list[dict] = []
 
@@ -22,14 +22,13 @@ def _startup():
 
     # 1) 데이터셋 로드
     print("[app] 데이터셋 로딩 중…")
-    try:
-        df = load_all(years=[2023])
-    except Exception:
-        df = load_all()
+    df = load_all()
+    if df.empty:
+        raise ValueError("데모 과제가 없습니다.")
     n = min(5, len(df))
     sample = df.sample(n=n, random_state=42).reset_index(drop=True)
     _projects = [project_views(row) for _, row in sample.iterrows()]
-    print(f"[app] 과제 {len(_projects)}개 로드 완료")
+    print(f"[app] projects_labeled_only.csv에서 과제 {len(_projects)}개 로드 완료")
 
     # 2) LLM 싱글톤 preload (첫 요청 지연 방지)
     print("[app] LLM 모델 로딩 중…")

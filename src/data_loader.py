@@ -1,4 +1,4 @@
-"""Load R&D project xlsx files and expose per-agent views."""
+"""Load the labeled R&D project dataset and expose per-agent views."""
 from __future__ import annotations
 import pandas as pd
 from typing import Iterable
@@ -30,26 +30,42 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_all(years: Iterable[int] | None = None) -> pd.DataFrame:
-    # parquet 우선, 없으면 xlsx 폴백
-    parquet_files = sorted(DATASET_DIR.glob("*.parquet"))
-    xlsx_files    = sorted(DATASET_DIR.glob("*.xlsx"))
-    use_parquet   = bool(parquet_files)
-    files = parquet_files if use_parquet else xlsx_files
+    """Load the full labeled project CSV.
+
+    The ``years`` argument is kept for backward compatibility but intentionally
+    ignored because projects_labeled_only.csv is already the curated evaluation
+    dataset for this run.
+    """
+    preferred_csv = DATASET_DIR / "projects_labeled_only.csv"
+    if preferred_csv.exists():
+        files = [preferred_csv]
+    else:
+        parquet_files = sorted(DATASET_DIR.glob("*.parquet"))
+        xlsx_files    = sorted(DATASET_DIR.glob("*.xlsx"))
+        csv_files     = sorted(DATASET_DIR.glob("*.csv"))
+        files = parquet_files or xlsx_files or csv_files
 
     frames = []
     for f in files:
-        if years and not any(str(y) in f.name for y in years):
-            continue
-        if use_parquet:
+        suffix = f.suffix.lower()
+        if suffix == ".parquet":
             df = pd.read_parquet(f)
-        else:
+        elif suffix == ".xlsx":
             df = pd.read_excel(f, sheet_name=SHEET_NAME)
             df = _normalize_columns(df)
+        elif suffix == ".csv":
+            df = pd.read_csv(f, low_memory=False)
+            df = _normalize_columns(df)
+        else:
+            continue
         df["__source_file"] = f.name
         frames.append(df)
+
     if not frames:
         raise FileNotFoundError(f"No dataset files found in {DATASET_DIR}")
-    return pd.concat(frames, ignore_index=True)
+    out = pd.concat(frames, ignore_index=True).reset_index(drop=True)
+    out["__dataset_row_id"] = range(len(out))
+    return out
 
 
 def _pick(row: pd.Series, cols: list[str]) -> dict:
