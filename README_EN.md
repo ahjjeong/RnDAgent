@@ -1,5 +1,7 @@
 # RnDAgent
 
+[한국어](README.md) | [English](README_EN.md)
+
 **RnDAgent** is an experimental framework that simulates public R&D project selection using an LLM-based multi-agent debate structure and validates the resulting predictions with NTIS performance data.  
 This repository contains the code and experimental outputs from a team project for the **Technology Innovation Theory and Research Methodology** course in the **Department of Industrial Engineering at Seoul National University**.
 
