@@ -12,6 +12,8 @@ tqdm
 langgraph>=0.2.0
 langchain-core>=0.3.0
 python-dotenv
-fastapi
+fastapi[standard]==0.121.3
+starlette==0.50.0
+prometheus-fastapi-instrumentator==7.1.0
 uvicorn[standard]
-vllm==0.7.3
+vllm==0.17.1

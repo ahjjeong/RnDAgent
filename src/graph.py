@@ -40,7 +40,7 @@ def _normalize_stage(raw: str | None) -> str:
 
 
 def _project_year(row: dict) -> int | None:
-    for col in ("과제수행연도", "제출년도", "종료연도"):
+    for col in ("종료연도", "project_end_year", "총연구기간-종료연월일", "과제수행연도", "제출년도"):
         value = row.get(col)
         if value is None:
             continue
@@ -69,7 +69,7 @@ def _should_call_external_rag(
     )
     system = (
         "당신은 생명과학 기초연구 과제의 창의성 평가를 위한 RAG 사용 여부를 결정하는 보조 평가자입니다. "
-        "내부 RAG 결과는 현재 과제 연도 이하의 과거·동년 과제만 포함합니다. "
+        "내부 RAG 결과는 성과 누출 방지를 위해 현재 과제 종료연도보다 이전 과제만 포함합니다. "
         "외부 RAG는 비용이 크므로, 내부 근거만으로 선행연구 대비 차별성 판단이 어렵다고 볼 때만 요청하십시오. "
         "중요: 내부 유사 과제가 적거나 없다는 사실만으로 외부 RAG를 요청하지 마십시오. "
         "그 경우는 오히려 참신성의 신호일 수 있습니다."
@@ -83,7 +83,7 @@ def _should_call_external_rag(
 - 키워드/목표 요약: {keywords}
 
 [내부 RAG 결과]
-{ref_block or "(내부 유사 과거·동년 과제 없음)"}
+{ref_block or "(내부 유사 과거 과제 없음)"}
 
 판단 기준:
 - 내부 RAG와 과제 설명만으로 차별성/창의성 판단이 가능하면 false
@@ -93,7 +93,12 @@ def _should_call_external_rag(
 
 JSON만 출력:
 {{"use_external_rag": true, "reason": "1문장"}}"""
-    raw = llm.chat(system, user, max_new_tokens=WEB_RAG_GATE_MAX_TOKENS)
+    raw = llm.chat(
+        system,
+        user,
+        max_new_tokens=WEB_RAG_GATE_MAX_TOKENS,
+        json_mode=True,
+    )
     parsed = extract_json(raw)
     decision = parsed.get("use_external_rag", False)
     if isinstance(decision, str):
@@ -142,7 +147,7 @@ def build_graph(retriever=None, event_cb: EventCallback = None):
             str(creativity_row.get("요약문_연구목표", ""))[:100],
         ]))
 
-        # 내부 RAG — 현재 과제 연도 이하만 검색하여 미래 과제 누출 방지
+        # 내부 RAG — 실제 성과를 붙이므로 현재 과제 종료연도 이전만 검색해 성과 누출 방지
         all_data_str = " ".join(
             str(v) for item in ["창의성", "수행계획 충실성", "연구개발 역량"]
             for v in {c: row.get(c) for c in ITEM_COLS[item] if row.get(c)}.values()
@@ -155,12 +160,12 @@ def build_graph(retriever=None, event_cb: EventCallback = None):
                 all_data_str,
                 k=3,
                 exclude_idx=row.get("__dataset_row_id"),
-                max_year=_project_year(row),
+                max_year=(_project_year(row) - 1) if _project_year(row) is not None else None,
                 exclude_project_id=row.get(ID_COL),
             )
             if refs:
                 print(f"[RAG] 내부검색 prefetch — {len(refs)}건")
-                ref_result = "\n[유사 과거·동년 과제 참고]\n" + "\n".join(f"* {r[:300]}" for r in refs)
+                ref_result = "\n[유사 과거 과제 참고: 실제 논문 성과 포함]\n" + "\n".join(f"* {r[:900]}" for r in refs)
 
         # 외부 RAG — 항상 호출하지 않고, LLM이 내부 RAG만으로 부족하다고 판단할 때 보강
         rag_gate_reason = ""

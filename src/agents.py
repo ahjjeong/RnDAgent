@@ -51,7 +51,7 @@ def _normalize_stage(raw: str | None) -> str:
 
 
 def _project_year(row: dict) -> int | None:
-    for col in ("과제수행연도", "제출년도", "종료연도"):
+    for col in ("종료연도", "project_end_year", "총연구기간-종료연월일", "과제수행연도", "제출년도"):
         value = row.get(col)
         if value is None:
             continue
@@ -162,12 +162,12 @@ class EvaluatorAgent:
                 all_data_str,
                 k=3,
                 exclude_idx=row.get("__dataset_row_id"),
-                max_year=_project_year(row),
+                max_year=(_project_year(row) - 1) if _project_year(row) is not None else None,
                 exclude_project_id=row.get(ID_COL),
             )
             if refs:
                 print(f"[RAG] 내부검색 {self.slot} — {len(refs)}건 주입됨")
-                ref_block = "\n[유사 과거·동년 과제 참고]\n" + "\n".join(f"* {r[:300]}" for r in refs)
+                ref_block = "\n[유사 과거 과제 참고: 실제 논문 성과 포함]\n" + "\n".join(f"* {r[:900]}" for r in refs)
 
         # ── 항목별 데이터 블록 ──
         creativity_data  = _fmt(_pick(row, ITEM_COLS["창의성"]))
@@ -239,7 +239,7 @@ class EvaluatorAgent:
         cfg = AGENT_MAP.get((stage, self.slot)) or AGENT_MAP[(TARGET_RESEARCH_STAGE, self.slot)]
 
         system, user = self._build_prompt(project, cfg, row)
-        raw = self.llm.chat(system, user, max_new_tokens=768)
+        raw = self.llm.chat(system, user, max_new_tokens=1200, json_mode=True)
         parsed = extract_json(raw)
         parsed["agent"]      = f"{stage}_{self.slot}_Agent"
         parsed["slot"]       = self.slot
@@ -252,18 +252,23 @@ class FacilitatorAgent:
     """위원장 — Coordinator(쟁점 식별·질문) + Moderator(최종 성과예측) 겸임."""
 
     PERSONA = (
-        "당신은 생명과학 기초연구 과제의 사후 성과를 예측하는 평가위원장입니다. "
-        "세 위원의 의견을 종합하여, 향후 5년 논문 성과가 유사 비교집단 내에서 "
+        "당신은 생명과학 기초연구 과제의 사후 논문 성과를 예측하는 평가위원장입니다. "
+        "세 위원의 의견과 유사 과거 과제의 실제 논문 성과를 종합하여, "
+        "기초연구의 특성상 창의성과 도전성을 가장 중요한 판단 요소로 삼고, "
+        "과제 시작연도부터 종료연도+4년까지의 SCI(E) 논문 성과가 유사 비교집단 내에서 "
         "얼마나 우수할지 예측합니다."
     )
 
     VERDICT_SCHEMA = (
         '{\n'
+        '  "item_consensus": {\n'
+        '    "창의성": {"score": 0.0, "grade": "매우 우수|우수|보통|미흡|매우 미흡", "reasoning": "score는 0~1 범위, 합의 근거 1~2문장"},\n'
+        '    "수행계획 충실성": {"score": 0.0, "grade": "매우 우수|우수|보통|미흡|매우 미흡", "reasoning": "score는 0~1 범위, 합의 근거 1~2문장"},\n'
+        '    "연구개발 역량": {"score": 0.0, "grade": "매우 우수|우수|보통|미흡|매우 미흡", "reasoning": "score는 0~1 범위, 합의 근거 1~2문장"}\n'
+        '  },\n'
         '  "performance_score": 0.0,\n'
-        '  "expected_performance_level": "high|middle|low",\n'
-        '  "predicted_high_performance_top20": true,\n'
         '  "confidence": 0.0,\n'
-        '  "key_reasons": "2~3문장"\n'
+        '  "key_reasons": "항목별 합의 점수와 유사 과거 과제의 실제 논문 성과를 연결한 2~3문장"\n'
         '}'
     )
 
@@ -316,13 +321,23 @@ class FacilitatorAgent:
         )
         system = (
             f"{self.PERSONA}\n"
-            "Round 2 토론까지 완료되었습니다. 최종 출력은 선정 여부가 아니라 사후 성과 예측입니다.\n"
+            "Round 2 토론까지 완료되었습니다. 최종 출력은 선정 여부가 아니라 사후 논문 성과 예측입니다.\n"
+            "먼저 창의성, 수행계획 충실성, 연구개발 역량의 항목별 합의 점수(item_consensus)를 산출하고, "
+            "item_consensus의 각 score는 0~1 범위로 두며, 1에 가까울수록 해당 항목이 매우 우수함을 의미합니다. "
+            "그 합의 점수를 최종 performance_score 산정의 근거로 사용하십시오. "
             "예측 대상은 종료연도 × 과학기술표준분류1-중 × 연구비 규모군 비교집단 내 "
-            "weighted_paper_count_5y 기준 논문 성과입니다.\n"
+            "weighted_paper_count_4y 기준 SCI(E) 논문 성과입니다.\n"
+            "유사 과거 과제 참고에 실제 논문 성과가 제공된 경우, 현재 과제의 항목별 합의 점수와 비교하여 "
+            "성과 점수를 보정하십시오. 단, 유사 과거 과제 성과를 그대로 복사하지 말고 현재 과제의 정보와 함께 판단하십시오. "
+            "유사 과거 과제들이 대체로 낮은 논문 성과를 보였고 현재 과제의 창의성·수행계획·연구역량이 뚜렷하게 우수하지 않다면 높은 performance_score를 부여하지 마십시오. "
+            "반대로 유사 과거 과제보다 현재 과제의 창의성·도전성, 계획 구체성, 연구 기반이 명확히 우수할 때만 상위권 점수를 고려하십시오. "
+            "항목별 합의에서는 특정 위원을 특정 항목의 담당자로 간주하지 말고, "
+            "세 위원의 근거가 데이터와 얼마나 잘 연결되는지를 기준으로 종합하십시오. "
+            "기초연구 과제이므로 창의성과 도전성이 낮으면 높은 performance_score를 부여하지 말고, "
+            "수행계획 충실성과 연구개발 역량은 창의적·도전적 연구가 논문 성과로 이어질 가능성을 보정하는 근거로 사용하십시오. "
             "performance_score는 비교집단 내 예상 성과 percentile에 대응하는 0~1 점수입니다. "
-            "predicted_high_performance_top20은 performance_score >= 0.80일 때만 true로 두십시오. "
-            "expected_performance_level은 high(0.80 이상), middle(0.40 이상 0.80 미만), "
-            "low(0.40 미만) 기준으로 일관되게 지정하십시오. "
+            "점수 anchor: 0.80은 비교집단 상위 20% 수준, 0.50은 중앙값 수준, 0.20은 하위권 수준으로 해석하십시오. "
+            "0.90 이상은 유사 과거 과제 성과와 현재 과제 근거가 모두 매우 강할 때만 사용하십시오. "
             "근거가 부족하면 performance_score와 confidence를 보수적으로 낮추십시오. "
             "아래 JSON 스키마로만 응답하세요."
         )
@@ -333,7 +348,7 @@ class FacilitatorAgent:
             f"[Round 2 반론]\n{rebuttal_summary}\n\n"
             f"[출력 스키마 — JSON만 응답]\n{self.VERDICT_SCHEMA}"
         )
-        raw = self.llm.chat(system, user, max_new_tokens=700)
+        raw = self.llm.chat(system, user, max_new_tokens=1400, json_mode=True)
         return extract_json(raw)
 
 

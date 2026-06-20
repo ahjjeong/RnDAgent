@@ -9,12 +9,15 @@ SHEET_NAME = "사업과제정보"
 # Persona stage is fixed to basic research. The CSV is already field-curated.
 TARGET_RESEARCH_STAGE = "기초연구"
 
-# A100 80GB full-dataset run: serve this model with vLLM on physical GPU 1.
-LLM_MODEL = os.getenv("LLM_MODEL", "Qwen/Qwen2.5-14B-Instruct")
+# A100 80GB full-dataset run: serve this model with vLLM on GPUs 0-3.
+LLM_MODEL = os.getenv("LLM_MODEL", "Qwen/Qwen3.5-9B")
 LLM_BACKEND = os.getenv("LLM_BACKEND", "vllm")  # "vllm" | "transformers"
 VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://127.0.0.1:8000/v1")
 VLLM_API_KEY = os.getenv("VLLM_API_KEY", "EMPTY")
 VLLM_TIMEOUT_SECONDS = int(os.getenv("VLLM_TIMEOUT_SECONDS", "300"))
+VLLM_REASONING_EFFORT = os.getenv("VLLM_REASONING_EFFORT", "")
+VLLM_THINKING_TOKEN_BUDGET = os.getenv("VLLM_THINKING_TOKEN_BUDGET", "")
+VLLM_ENABLE_THINKING = os.getenv("VLLM_ENABLE_THINKING", "")
 EMBED_MODEL = "BAAI/bge-m3"  # multilingual, Korean-capable, used for RAG
 RAG_DEVICE = os.getenv("RAG_DEVICE", "cpu")
 RAG_BATCH_SIZE = int(os.getenv("RAG_BATCH_SIZE", "32"))

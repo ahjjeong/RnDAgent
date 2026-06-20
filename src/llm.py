@@ -13,6 +13,9 @@ from .config import (
     VLLM_API_KEY,
     VLLM_BASE_URL,
     VLLM_TIMEOUT_SECONDS,
+    VLLM_ENABLE_THINKING,
+    VLLM_REASONING_EFFORT,
+    VLLM_THINKING_TOKEN_BUDGET,
 )
 
 
@@ -49,12 +52,29 @@ class LocalLLM:
             cls._instance = cls()
         return cls._instance
 
-    def chat(self, system: str, user: str, max_new_tokens: int = MAX_NEW_TOKENS) -> str:
+    def chat(
+        self,
+        system: str,
+        user: str,
+        max_new_tokens: int = MAX_NEW_TOKENS,
+        json_mode: bool = False,
+    ) -> str:
         if self.backend == "vllm":
-            return self._chat_vllm(system, user, max_new_tokens)
+            return self._chat_vllm(system, user, max_new_tokens, json_mode=json_mode)
         return self._chat_transformers(system, user, max_new_tokens)
 
-    def _chat_vllm(self, system: str, user: str, max_new_tokens: int) -> str:
+    def _chat_vllm(
+        self,
+        system: str,
+        user: str,
+        max_new_tokens: int,
+        json_mode: bool = False,
+    ) -> str:
+        if json_mode:
+            system = (
+                system
+                + "\n\n응답 규칙: 사고 과정, 해설, Markdown 없이 유효한 JSON 객체 하나만 출력하십시오."
+            )
         payload = {
             "model": self.model_name,
             "messages": [
@@ -65,6 +85,16 @@ class LocalLLM:
             "temperature": TEMPERATURE,
             "top_p": 0.9,
         }
+        if VLLM_REASONING_EFFORT:
+            payload["reasoning_effort"] = VLLM_REASONING_EFFORT
+        if VLLM_THINKING_TOKEN_BUDGET:
+            payload["thinking_token_budget"] = int(VLLM_THINKING_TOKEN_BUDGET)
+        if VLLM_ENABLE_THINKING:
+            payload["chat_template_kwargs"] = {
+                "enable_thinking": VLLM_ENABLE_THINKING.lower() in {"1", "true", "yes", "y"}
+            }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
         body = json.dumps(payload).encode("utf-8")
         req = request.Request(
             f"{VLLM_BASE_URL.rstrip('/')}/chat/completions",
@@ -76,12 +106,17 @@ class LocalLLM:
             method="POST",
         )
         try:
-            with self._lock, request.urlopen(req, timeout=VLLM_TIMEOUT_SECONDS) as resp:
+            with request.urlopen(req, timeout=VLLM_TIMEOUT_SECONDS) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:2000]
+            raise RuntimeError(
+                f"vLLM 서버 HTTP {exc.code} 오류: {VLLM_BASE_URL}. {detail}"
+            ) from exc
         except error.URLError as exc:
             raise RuntimeError(
                 f"vLLM 서버 호출 실패: {VLLM_BASE_URL}. "
-                "먼저 GPU 1번에서 vLLM 서버를 띄웠는지 확인하세요."
+                "먼저 GPU 0-3에서 vLLM 서버를 띄웠는지 확인하세요."
             ) from exc
         return data["choices"][0]["message"]["content"].strip()
 

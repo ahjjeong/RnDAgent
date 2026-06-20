@@ -1,6 +1,7 @@
 """Load the labeled R&D project dataset and expose per-agent views."""
 from __future__ import annotations
 import pandas as pd
+from pathlib import Path
 from typing import Iterable
 from .config import (
     DATASET_DIR, SHEET_NAME, AGENT1_COLS, AGENT2_COLS, AGENT3_COLS,
@@ -16,34 +17,44 @@ _OLD_TO_CANONICAL: dict[str, str] = {
 
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """구 연도 컬럼명을 정규 명칭으로 rename. 이미 정규 명칭이 있으면 구 명칭 컬럼은 삭제."""
+    """구 연도 컬럼명을 정규 명칭으로 통합."""
     rename_map = {}
     for old_col, canonical in _OLD_TO_CANONICAL.items():
         if old_col in df.columns:
             if canonical not in df.columns:
                 rename_map[old_col] = canonical   # rename
             else:
+                df[canonical] = df[canonical].combine_first(df[old_col])
                 df = df.drop(columns=[old_col])   # 정규 명칭 이미 존재 → 구 컬럼 제거
     if rename_map:
         df = df.rename(columns=rename_map)
     return df
 
 
-def load_all(years: Iterable[int] | None = None) -> pd.DataFrame:
+def load_all(
+    years: Iterable[int] | None = None,
+    dataset_path: str | Path | None = None,
+) -> pd.DataFrame:
     """Load the full labeled project CSV.
 
     The ``years`` argument is kept for backward compatibility but intentionally
     ignored because projects_labeled_only.csv is already the curated evaluation
     dataset for this run.
     """
-    preferred_csv = DATASET_DIR / "projects_labeled_only.csv"
-    if preferred_csv.exists():
-        files = [preferred_csv]
+    if dataset_path is not None:
+        files = [Path(dataset_path)]
     else:
-        parquet_files = sorted(DATASET_DIR.glob("*.parquet"))
-        xlsx_files    = sorted(DATASET_DIR.glob("*.xlsx"))
-        csv_files     = sorted(DATASET_DIR.glob("*.csv"))
-        files = parquet_files or xlsx_files or csv_files
+        preferred_csv = DATASET_DIR / "projects_labeled_only.csv"
+        if preferred_csv.exists():
+            files = [preferred_csv]
+        else:
+            parquet_files = sorted(DATASET_DIR.glob("*.parquet"))
+            xlsx_files    = sorted(DATASET_DIR.glob("*.xlsx"))
+            csv_files     = sorted(DATASET_DIR.glob("*.csv"))
+            files = parquet_files or xlsx_files or csv_files
+
+    if dataset_path is not None and not files[0].exists():
+        raise FileNotFoundError(f"Dataset file not found: {files[0]}")
 
     frames = []
     for f in files:
