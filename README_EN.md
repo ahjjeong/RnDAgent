@@ -11,7 +11,7 @@ The central research question is:
 
 ## Methodology Overview
 
-<img width="5142" height="1934" alt="image" src="https://github.com/user-attachments/assets/27826230-462e-4311-8cf8-337f139945e2" />
+<img width="5142" height="1934" alt="image" src="https://github.com/user-attachments/assets/e0932c26-64b0-4a38-b3bf-38ffb42c500e" />
 
 The framework consists of four main stages.
 
