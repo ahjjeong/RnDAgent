@@ -11,7 +11,7 @@
 
 ## 방법론 개요
 
-<img width="5142" height="1934" alt="image" src="https://github.com/user-attachments/assets/27826230-462e-4311-8cf8-337f139945e2" />
+<img width="5142" height="1934" alt="image" src="https://github.com/user-attachments/assets/c31bd49b-dd60-4699-8bde-64ab11e40be8" />
 
 프레임워크는 크게 네 단계로 구성됩니다.
 
