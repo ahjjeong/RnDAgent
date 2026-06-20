@@ -214,12 +214,12 @@ Main settings are managed in `src/config.py`.
 
 Department of Industrial Engineering, Seoul National University
 
-| Name | Lab |
+| Name | Affiliation |
 |---|---|
-| Jihyuk Kim | Technology Intelligence Lab |
-| Dongwoo Park | Life-Enhancing Technology Lab |
 | Jaehong Ahn | Technology Intelligence Lab |
 | Ajeong Choi | Data Science and Business Analytics Lab |
+| Jihyuk Kim | Technology Intelligence Lab |
+| Dongwoo Park | Life-Enhancing Technology Lab |
 
 ## Notes
 
